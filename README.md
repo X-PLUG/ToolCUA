@@ -6,6 +6,7 @@
   line-height:1.25;
   text-align:center;
   margin:0 0 24px;">
+  <img src="assets/tongyi.png" width="40px" style="vertical-align: middle; margin-bottom: 10px;">
   ToolCUA: Towards Optimal GUI-Tool Path Orchestration for Computer Use Agents
 </h1>
 
