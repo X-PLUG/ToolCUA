@@ -11,7 +11,7 @@
 </h1>
 
 <p align="center">
-&nbsp&nbsp🌐 <a href="https://x-plug.github.io/ToolCUA/">Website</a>&nbsp&nbsp | &nbsp&nbsp📑 <a href="https://arxiv.org/abs/2508.09123">Paper</a>&nbsp&nbsp | &nbsp&nbsp🤗 <a href="https://huggingface.co/mPLUG/ToolCUA-8B">8B-Model</a>&nbsp&nbsp | &nbsp&nbsp📄 <a href="https://x-plug.github.io/ToolCUA/#case-study">Cases</a>
+&nbsp&nbsp🌐 <a href="https://x-plug.github.io/ToolCUA/">Website</a>&nbsp&nbsp | &nbsp&nbsp📑 <a href="https://arxiv.org/abs/2508.09123">Paper</a>&nbsp&nbsp | &nbsp&nbsp🤗 <a href="https://huggingface.co/mPLUG/ToolCUA-8B">ToolCUA-8B</a>&nbsp&nbsp | &nbsp&nbsp📄 <a href="https://x-plug.github.io/ToolCUA/#case-study">Cases</a>
 </p>
 
 <div align="center">
