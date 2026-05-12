@@ -188,7 +188,7 @@ Compared with the Qwen3-VL-8B-Instruct baseline, **ToolCUA-8B** improves Accurac
 
 ## Acknowledge
 
-We thank Zhaoqing Zhu, Junyang Wang, Jitong Liao for their training infrastructure support and gui-tool sandbox construction.
+We thank Zhaoqing Zhu, Junyang Wang, Jitong Liao and Haowei Liu for their support of training infrastructure, sandbox construction and evaluation.
 
 Our work is motivated by [OpenCUA](https://github.com/xlang-ai/OpenCUA), [ScaleCUA](https://github.com/OpenGVLab/ScaleCUA), [AutoGLM](https://github.com/zai-org/Open-AutoGLM), [CUA-skill](https://github.com/microsoft/cua_skill), [EVOCUA](https://github.com/meituan/EvoCUA), and [Mobile-Agent Series](https://github.com/X-PLUG/MobileAgent). Thanks for their wonderful work.
 
