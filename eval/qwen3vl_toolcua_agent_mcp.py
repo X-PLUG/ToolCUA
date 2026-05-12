@@ -1,0 +1,1131 @@
+import base64
+import json
+import logging
+import time
+import os
+from io import BytesIO
+from typing import Dict, List, Tuple
+
+from http import HTTPStatus
+import dashscope
+from dashscope import MultiModalConversation
+import backoff
+import openai
+from PIL import Image
+from requests.exceptions import SSLError
+from google.api_core.exceptions import (
+    InvalidArgument,
+    ResourceExhausted,
+    InternalServerError,
+    BadRequest,
+)
+from mm_agents.utils.qwen_vl_utils import smart_resize
+import math
+import re
+
+logger = None
+
+MAX_RETRY_TIMES_INNER = 3
+MAX_RETRY_TIMES_OUTER = 3
+MAX_TOOL_RES_LEN = 10000
+MIN_TOOL_RES_THRESH = 100
+
+def image_base64_to_data_url(image_base64: str, mime_type: str = "image/png") -> str:
+    if image_base64.startswith("data:image"):
+        return image_base64
+    return f"data:{mime_type};base64,{image_base64}"
+
+
+def image_file_to_data_url(image):
+    with open(image, "rb") as f:
+        return image_base64_to_data_url(encode_image(f.read()))
+
+
+def encode_image(image_content):
+    return base64.b64encode(image_content).decode("utf-8")
+
+
+def process_image(image_bytes):
+    """
+    Process an image for Qwen VL models (thinking variant).
+    Uses a tighter resize cap consistent with the thinking DUN agent.
+    """
+    image = Image.open(BytesIO(image_bytes))
+    width, height = image.size
+
+    resized_height, resized_width = smart_resize(
+        height=height,
+        width=width,
+        factor=32,
+        max_pixels=16 * 16 * 4 * 12800,
+    )
+
+    image = image.resize((resized_width, resized_height))
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    processed_bytes = buffer.getvalue()
+
+    return base64.b64encode(processed_bytes).decode("utf-8")
+
+
+def remove_base64_images(messages):
+    def is_base64_image(url):
+        return bool(re.match(r'^data:image/.+;base64,', url))
+
+    cleaned_messages = []
+
+    for message in messages:
+        if message["role"] == "user":
+            cleaned_content = []
+            for item in message["content"]:
+                if 'type' in item:
+                    if item["type"] == "text":
+                        cleaned_content.append(item)  # Keep text content as it is
+                else:
+                    # for dashscope-like output
+                    if 'image' not in item:
+                        cleaned_content.append(item)
+
+            cleaned_message = {
+                "role": message["role"],
+                "content": cleaned_content
+            }
+            cleaned_messages.append(cleaned_message)
+        else:
+            cleaned_messages.append(message)
+
+    return cleaned_messages
+
+
+def _is_standard_mcp_result(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = json.loads(value)
+    except Exception:
+        return False
+    return (
+        isinstance(parsed, dict)
+        and {"success", "result", "error_message"}.issubset(parsed.keys())
+    )
+
+
+IMPORTANT_GUI_ONLY = """<IMPORTANT>
+Reminder:
+- The `computer_use` function provides **GUI actions** to interact with the computer directly via mouse and keyboard.
+- After each GUI action, you will receive a new screenshot reflecting the current state of the screen.
+- Always consult the latest screenshot before deciding your next action.
+</IMPORTANT>"""
+
+IMPORTANT_WITH_MCP = """<IMPORTANT>
+Reminder:
+- Use `computer_use` to interact with the computer via mouse and keyboard.
+    - `computer_use` GUI actions usually only provide a simple success result such as `Success`.
+    - After each action, you will receive a new screenshot of the current state of the computer.
+- If there are other functions, they are MCP Tool actions, used to interact with the MCP server in computer. 
+    - Their results are returned as screenshot and a textual raw JSON string with fields `success`, `result`, and `error_message`.   
+    - Some MCP Tool actions may NOT cause any visible change in the screenshot, so rely on the JSON tool result when appropriate.
+    - Do NOT use `read_text_file` to read PDF or other non-plaintext files; use GUI actions instead.
+    - Do NOT repeat the same MCP Tool call if it keeps failing or produces no useful progress — try a different approach or terminate.
+    - Do NOT repeatedly call `env_info` tools to retrieve file information.
+</IMPORTANT>"""
+
+
+
+class Qwen3VLAgent:
+
+    def __init__(
+        self,
+        platform: str = "ubuntu",
+        model: str = "qwen3-vl-plus",
+        api_url='',
+        api_key='',
+        max_tokens: int = 32768,
+        max_colmpletion_tokens: int = 2048,
+        top_p: float = 0.9,
+        temperature: float = 0.0,
+        action_space: str = "pyautogui",
+        observation_type: str = "screenshot",
+        history_n: int = 4,
+        add_thought_prefix: bool = False,
+        coordinate_type: str = "relative",
+        api_backend: str = "openai",  # "openai" or "dashscope"
+        enable_thinking: bool = False,  # Enable thinking mode for DashScope
+        thinking_budget: int = 32768,  # Token budget for reasoning
+        new_format: bool = False,
+        save_logprobs: bool = False
+    ):
+        self.platform = platform
+        self.model = model
+        self.api_url=api_url
+        self.api_key=api_key
+        self.max_tokens = max_tokens
+        self.max_completion_tokens = max_colmpletion_tokens
+        self.top_p = top_p
+        self.temperature = temperature
+        self.action_space = action_space
+        self.observation_type = observation_type
+        self.history_n = history_n
+        self.add_thought_prefix = add_thought_prefix
+        self.coordinate_type = coordinate_type
+        self.api_backend = api_backend
+        self.enable_thinking = enable_thinking
+        self.thinking_budget = thinking_budget
+        self.new_format = new_format
+        
+        self.save_logprobs = save_logprobs
+
+        assert action_space in ["pyautogui", "mcp"], "Invalid action space"
+        assert observation_type in ["screenshot"], "Invalid observation type"
+        assert api_backend in ["openai", "dashscope"], "Invalid API backend, must be 'openai' or 'dashscope'"
+
+        self.thoughts = []
+        self.actions = []
+        self.observations = []
+        self.responses = []
+        self.screenshots = []
+        self.screen_info = []
+        self.image_data_urls = []
+        self.app_prompts = []
+    def predict(self, instruction: str, obs: Dict, tool_name: str = '') -> List:
+        """
+        Predict the next action(s) based on the current observation.
+        Returns (response, pyautogui_code).
+        """
+
+
+        screenshot_bytes = obs["screenshot"]
+
+        image = Image.open(BytesIO(screenshot_bytes))
+        width, height = image.size
+        # print(f"Original screen resolution: {width}x{height}")
+
+        processed_image = process_image(screenshot_bytes)
+
+        image_data_url = image_base64_to_data_url(processed_image)
+        self.image_data_urls.append(image_data_url)
+
+        processed_img = Image.open(
+            BytesIO(base64.b64decode(processed_image))
+        )
+        processed_width, processed_height = processed_img.size
+        # print(
+        #     "Processed image resolution: "
+        #     f"{processed_width}x{processed_height}"
+        # )
+
+        self.screenshots.append(processed_image)
+
+        current_step = len(self.actions)
+        history_start_idx = max(0, current_step - self.history_n)
+        logger.info(f"---------------- step------------- {current_step}\nhistory_start_idx{history_start_idx}")
+        logger.info(self.actions)
+
+
+        # ------------ tool response ------------
+        cur_app = obs["cur_app"]
+        logger.info(f"current app is {cur_app}")
+
+        if obs["apps"]:
+            app_str = "Window ID    App Name    Title\n"
+            for window_id, app in obs["apps"].items():
+                app_str += f"{window_id}    {app['app_name']}    {app['title']}\n"
+        else:
+            app_str = "None"
+
+        app_info = obs.get("exe_result", "")  # 上一步调用tool返回的内容
+        if app_info in (None, ""):
+            app_prompt = "Success"
+        else:
+            app_info = str(app_info).strip()
+            if _is_standard_mcp_result(app_info):
+                app_prompt = app_info
+            else:
+                app_prompt = app_info or "Success"
+
+        if len(app_prompt) > MAX_TOOL_RES_LEN:
+            logger.info(f"[WARNING] App Prompt is too long, truncating...")
+            app_prompt = app_prompt[:MAX_TOOL_RES_LEN]
+        logger.info(f"[INFO] App Prompt: {app_prompt}")
+        self.app_prompts.append(app_prompt)
+
+        if self.new_format == True:
+            previous_actions = []
+            for i in range(history_start_idx):
+                if i < len(self.actions):
+                    previous_actions.append(f"Step {i+1}: {self.actions[i]}")
+            previous_actions_str = (
+                "\n".join(previous_actions) if previous_actions else "None"
+            )
+
+        else:
+            previous_actions = []
+            for i in range(history_start_idx):
+                if i < len(self.actions):
+                    previous_actions.append(f"Step {i+1}: {self.actions[i]} Tool response: {self.app_prompts[i+1]}")
+            previous_actions_str = (
+                "\n".join(previous_actions) if previous_actions else "None"
+            )
+
+
+        description_prompt_lines = [
+            "Use a mouse and keyboard to interact with a computer, and take screenshots.",
+            "* This is an interface to a desktop GUI. You do not have access to a terminal or applications menu. You must click on desktop icons to start applications.",
+            "* Some applications may take time to start or process actions, so you may need to wait and take successive screenshots to see the results of your actions. E.g. if you click on Firefox and a window doesn't open, try wait and taking another screenshot.",
+            (
+                f"* The screen's resolution is {processed_width}x{processed_height}."
+                if self.coordinate_type == "absolute"
+                else "* The screen's resolution is 1000x1000."
+            ),
+            "* Whenever you intend to move the cursor to click on an element like an icon, you should consult a screenshot to determine the coordinates of the element before moving the cursor.",
+            "* If you tried clicking on a program or link but it failed to load even after waiting, try adjusting your cursor position so that the tip of the cursor visually falls on the element that you want to click.",
+            "* Make sure to click any buttons, links, icons, etc with the cursor tip in the center of the element. Don't click boxes on their edges unless asked.",
+        ]
+        description_prompt = "\n".join(description_prompt_lines)
+
+
+        action_description_prompt = """
+* `key`: Performs key down presses on the arguments passed in order, then performs key releases in reverse order.
+* `type`: Type a string of text on the keyboard.
+* `mouse_move`: Move the cursor to a specified (x, y) pixel coordinate on the screen.
+* `left_click`: Click the left mouse button at a specified (x, y) pixel coordinate on the screen.
+* `left_click_drag`: Click and drag the cursor to a specified (x, y) pixel coordinate on the screen.
+* `right_click`: Click the right mouse button at a specified (x, y) pixel coordinate on the screen.
+* `middle_click`: Click the middle mouse button at a specified (x, y) pixel coordinate on the screen.
+* `double_click`: Double-click the left mouse button at a specified (x, y) pixel coordinate on the screen.
+* `triple_click`: Triple-click the left mouse button at a specified (x, y) pixel coordinate on the screen (simulated as double-click since it's the closest action).
+* `scroll`: Performs a scroll of the mouse scroll wheel.
+* `hscroll`: Performs a horizontal scroll (mapped to regular scroll).
+* `wait`: Wait specified seconds for the change to happen.
+* `terminate`: Terminate the current task and report its completion status.
+* `answer`: Answer a question.
+        """
+
+        tools_def = {
+            "type": "function", 
+            "function": {
+                "name_for_human": "computer_use", 
+                "name": "computer_use", 
+                "description": description_prompt,
+                "parameters": {
+                    "properties": {
+                        "action": {
+                            "description": action_description_prompt,
+                            "enum": ["key", "type", "mouse_move", "left_click", "left_click_drag", 
+                                     "right_click", "middle_click", "double_click", "scroll", "wait", "terminate"], 
+                            "type": "string"
+                        },
+                        "keys": {"description": "Required only by `action=key`.", "type": "array"}, 
+                        "text": {"description": "Required only by `action=type`.", "type": "string"}, 
+                        "coordinate": {"description": "The x,y coordinates for mouse actions.", "type": "array"}, 
+                        "pixels": {"description": "The amount of scrolling.", "type": "number"}, 
+                        "time": {"description": "The seconds to wait.", "type": "number"}, 
+                        "status": {
+                            "description": "The status of the task.", 
+                            "type": "string", 
+                            "enum": ["success", "failure"]
+                        }
+                    }, 
+                    "required": ["action"], 
+                    "type": "object"
+                }, 
+                "args_format": "Format the arguments as a JSON object."
+            }
+        }
+
+        tool_des = ''
+        important_section = ''
+        if self.action_space == "mcp":
+            tool_list=obs.get('tool_list', []) # tool_name传进来没用啊...
+            for tool_func in tool_list:
+                if isinstance(tool_func, str):
+                    tool_des += tool_func + '\n'
+                else:
+                    tool_des += json.dumps(tool_func) + '\n'
+
+            has_mcp_tools = bool(tool_des.strip())
+            important_section = IMPORTANT_WITH_MCP if has_mcp_tools else IMPORTANT_GUI_ONLY
+            logger.info(f"[INFO] has_mcp_tools: {has_mcp_tools}")
+        else:
+            logger.info("[INFO] action_space is pyautogui; skipping MCP tool_list and important_section")
+
+        important_block = f"\n\n{important_section}\n" if important_section else "\n"
+        system_prompt = """# Tools
+
+        You may call one or more functions to assist with the user query.
+
+        You are provided with function signatures within <tools></tools> XML tags:
+        <tools>
+        """ + json.dumps(tools_def) + '\n' + tool_des + """
+        </tools>
+
+        For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
+        <tool_call>
+        {"name": <function-name>, "arguments": <args-json-object>}
+        </tool_call>""" + important_block + """
+        # Response format
+
+        Response format for every step:
+        1) Action: a short imperative describing what to do in the UI, or specifying which tool to invoke
+        2) A single <tool_call>...</tool_call> block containing only the JSON: {"name": <function-name>, "arguments": <args-json-object>}.
+
+        Rules:
+        - Output exactly in the order: Action, <tool_call>.
+        - Be brief: one sentence for Action.
+        - Do not output anything else outside those parts.
+        - If finishing, use action=terminate in the tool call."""
+        
+        
+
+        instruction_prompt = f"""
+Please generate the next move according to the UI screenshot, instruction and previous actions.
+
+Instruction: {instruction}
+
+Previous actions:
+{previous_actions_str}"""
+
+        messages = [
+            {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": system_prompt},
+                ],
+            }
+        ]
+
+        history_len = min(self.history_n, len(self.responses))
+        logger.info(f"history_len: {history_len}")
+        if history_len > 0:
+            history_responses = self.responses[-history_len:]
+            history_screenshots = self.screenshots[-history_len - 1:-1]
+            history_image_data_urls = self.image_data_urls[-history_len - 1:-1]
+            history_app_prompts = self.app_prompts[-history_len-1:-1]
+
+            for idx in range(history_len):
+                cur_app_prompt = history_app_prompts[idx]
+                if idx < len(history_screenshots):
+                    history_image_data_url = history_image_data_urls[idx]
+                    if idx == 0:
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": instruction_prompt},
+                                    {
+                                        "type": "text",
+                                        "text": "<tool_response>\n",
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": f"{cur_app_prompt}",
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {"url": history_image_data_url},
+                                    },
+                                    {"type": "text", "text": "\n</tool_response>"},
+                                ],
+                            }
+                        )
+                    else:
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "<tool_response>\n",
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": f"{cur_app_prompt}",
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {"url": history_image_data_url},
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": "\n</tool_response>",
+                                    }
+                                ],
+                            }
+                        )
+
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "text", "text": f"{history_responses[idx]}"},
+                        ],
+                    }
+                )
+                
+
+            cur_app_prompt = self.app_prompts[-1]
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "<tool_response>\n",
+                        },
+                        {
+                            "type": "text",
+                            "text": f"{cur_app_prompt}",
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": image_data_url},
+                        },
+                        {
+                            "type": "text",
+                            "text": "\n</tool_response>",
+                        },
+                    ],
+                }
+            )
+            tool_response =  {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "<tool_response>\n",
+                    },
+                    {
+                        "type": "text",
+                        "text": f"{cur_app_prompt}",
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": image_data_url},
+                    },
+                    {
+                        "type": "text",
+                        "text": "\n</tool_response>",
+                    },
+                ],
+            }
+
+        else: # 第一步
+            if self.history_n == 0:
+                cur_app_prompt = self.app_prompts[-1]
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": instruction_prompt},
+                            {
+                                "type": "text",
+                                "text": "<tool_response>\n",
+                            },
+                            {
+                                "type": "text",
+                                "text": f"{cur_app_prompt}",
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": image_data_url},
+                            },
+                            {"type": "text", "text": f"\n</tool_response>"},
+                        ],
+                    }
+                )
+                tool_response = {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "<tool_response>\n",
+                            },
+                            {
+                                "type": "text",
+                                "text": f"{cur_app_prompt}",
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": image_data_url},
+                            },
+                            {"type": "text", "text": f"\n</tool_response>"},
+                        ],
+                    }
+            else:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": instruction_prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": image_data_url},
+                            },
+                        ],
+                    }
+                )
+                tool_response = None
+
+        if self.new_format:
+            for idx, role in enumerate(messages):
+                if role['role'] == 'user' and idx > 1:
+                    drop_flag = False
+                    for content in role['content']:
+                        if 'image_url' in content and idx != len(messages)-1:
+                            drop_flag = True
+
+                    if drop_flag == True and 'tool_response' in role['content'][0]['text']:
+                        print(role['content'][2])
+                        role['content'] = [role['content'][2]]
+
+                if role['role'] == 'user' and idx == 1:
+                    new_content = []
+
+                    for item in role['content']:
+                        if 'text' in item and 'Instruction:' in item['text']:
+                            new_content.append(item)
+                        if 'image_url' in item:
+                            new_content.append(item)
+
+                    role['content'] =  new_content
+
+        retry_count = 0
+        max_retries = MAX_RETRY_TIMES_OUTER
+        low_level_instruction = None
+        pyautogui_code = None
+        response = None
+
+        while retry_count <= max_retries:
+            try:
+                response = self.call_llm(
+                    {
+                        "model": self.model,
+                        "messages": messages,
+                        # "max_tokens": self.max_tokens,
+                        # "top_p": self.top_p,
+                        # "temperature": self.temperature,
+                    },
+                    self.model,
+                )
+                logger.info(f"Qwen3VL Output: {response}")
+                # print(f"Qwen3VL Output: {response}")
+            except Exception as llm_err:
+                retry_count += 1
+                logger.warning(f"[LLM Error] attempt {retry_count}/{max_retries}: {llm_err}")
+                if retry_count > max_retries:
+                    logger.error("Max retries reached, skipping this task.")
+                    raise RuntimeError(f"LLM call failed after {max_retries} retries") from llm_err
+                time.sleep(5)
+                continue
+
+            try:
+                low_level_instruction, pyautogui_code = self.parse_response(
+                    response, width, height, processed_width, processed_height,
+                )
+                if not pyautogui_code:
+                    raise ValueError("pyautogui_code is empty after parsing.")
+                break
+            except Exception as parse_err:
+                retry_count += 1
+                logger.warning(f"[Parse Error] attempt {retry_count}/{max_retries}: {parse_err}")
+                if retry_count > max_retries:
+                    logger.error("Max retries reached, skipping this task.")
+                    raise RuntimeError(f"Parse failed after {max_retries} retries") from parse_err
+                time.sleep(5)
+                continue
+        
+
+        # ── 3. 收尾 ──────────────────────────────────────────────────────
+        if response is not None:
+            self.responses.append(response)
+
+        logger.info(f"Low level instruction: {low_level_instruction}")
+        logger.info(f"Pyautogui code: {pyautogui_code}")
+
+
+        self.actions.append(low_level_instruction)
+
+        return response, pyautogui_code, messages, tool_response
+
+    def parse_response(
+        self,
+        response: str,
+        original_width: int = None,
+        original_height: int = None,
+        processed_width: int = None,
+        processed_height: int = None,
+    ) -> Tuple[str, List[str]]:
+        """
+        Parse LLM response and convert it to low level action and pyautogui code.
+        """
+        low_level_instruction = ""
+        pyautogui_code: List[str] = []
+
+        if response is None or not response.strip():
+            return low_level_instruction, pyautogui_code
+
+        def adjust_coordinates(x: float, y: float) -> Tuple[int, int]:
+            if not (original_width and original_height):
+                return int(x), int(y)
+            if self.coordinate_type == "absolute":
+                # scale from processed pixels to original
+                if processed_width and processed_height:
+                    x_scale = original_width / processed_width
+                    y_scale = original_height / processed_height
+                    return int(x * x_scale), int(y * y_scale)
+                return int(x), int(y)
+            # relative: scale from 0..999 grid
+            x_scale = original_width / 999
+            y_scale = original_height / 999
+            return int(x * x_scale), int(y * y_scale)
+
+        def process_tool_call(json_str: str) -> None:
+            try:
+                tool_call = json.loads(json_str)
+                if tool_call.get("name") == "computer_use":
+                    args = tool_call["arguments"]
+                    action = args["action"]
+
+                    if action == "left_click" or action == 'click':
+                        if "coordinate" in args:
+                            x, y = args["coordinate"]
+                            adj_x, adj_y = adjust_coordinates(x, y)
+                            pyautogui_code.append(f"pyautogui.click({adj_x}, {adj_y})")
+                        else:
+                            pyautogui_code.append("pyautogui.click()")
+
+                    elif action == "right_click":
+                        if "coordinate" in args:
+                            x, y = args["coordinate"]
+                            adj_x, adj_y = adjust_coordinates(x, y)
+                            pyautogui_code.append(
+                                f"pyautogui.rightClick({adj_x}, {adj_y})"
+                            )
+                        else:
+                            pyautogui_code.append("pyautogui.rightClick()")
+
+                    elif action == "middle_click":
+                        if "coordinate" in args:
+                            x, y = args["coordinate"]
+                            adj_x, adj_y = adjust_coordinates(x, y)
+                            pyautogui_code.append(
+                                f"pyautogui.middleClick({adj_x}, {adj_y})"
+                            )
+                        else:
+                            pyautogui_code.append("pyautogui.middleClick()")
+
+                    elif action == "double_click":
+                        if "coordinate" in args:
+                            x, y = args["coordinate"]
+                            adj_x, adj_y = adjust_coordinates(x, y)
+                            pyautogui_code.append(
+                                f"pyautogui.doubleClick({adj_x}, {adj_y})"
+                            )
+                        else:
+                            pyautogui_code.append("pyautogui.doubleClick()")
+                    elif action == "triple_click":
+                        if "coordinate" in args:
+                            x, y = args["coordinate"]
+                            adj_x, adj_y = adjust_coordinates(x, y)
+                            pyautogui_code.append(f"pyautogui.tripleClick({adj_x}, {adj_y})")
+                        else:
+                            pyautogui_code.append("pyautogui.tripleClick()")
+                    
+
+                    elif action == "type":
+                        text = args.get("text", "")
+                        pyautogui_code.append(f"pyautogui.typewrite('{text}')")
+
+                    elif action == "key" or action == 'hotkey':
+                        keys = args.get("keys", [])
+                        if isinstance(keys, list):
+                            cleaned_keys = []
+                            for key in keys:
+                                if isinstance(key, str):
+                                    if key.startswith("keys=["):
+                                        key = key[6:]
+                                    if key.endswith("]"):
+                                        key = key[:-1]
+                                    if key.startswith("['") or key.startswith('["'):
+                                        key = key[2:] if len(key) > 2 else key
+                                    if key.endswith("']") or key.endswith('"]'):
+                                        key = key[:-2] if len(key) > 2 else key
+                                    key = key.strip()
+                                    cleaned_keys.append(key)
+                                else:
+                                    cleaned_keys.append(key)
+                            keys = cleaned_keys
+
+                        keys_str = ", ".join([f"'{key}'" for key in keys])
+                        if len(keys) > 1:
+                            pyautogui_code.append(f"pyautogui.hotkey({keys_str})")
+                        else:
+                            pyautogui_code.append(f"pyautogui.press({keys_str})")
+
+                    elif action == "scroll":
+                        pixels = args.get("pixels", 0)
+                        pyautogui_code.append(f"pyautogui.scroll({pixels})")
+
+                    elif action == "wait":
+                        pyautogui_code.append("WAIT")
+
+                    elif action == "terminate":
+                        pyautogui_code.append("DONE")
+
+                    elif action == "mouse_move":
+                        if "coordinate" in args:
+                            x, y = args["coordinate"]
+                            adj_x, adj_y = adjust_coordinates(x, y)
+                            pyautogui_code.append(
+                                f"pyautogui.moveTo({adj_x}, {adj_y})"
+                            )
+                        else:
+                            pyautogui_code.append("pyautogui.moveTo(0, 0)")
+
+                    elif action == "left_click_drag" or action == 'drag':
+                        if "coordinate" in args:
+                            x, y = args["coordinate"]
+                            adj_x, adj_y = adjust_coordinates(x, y)
+                            duration = args.get("duration", 0.5)
+                            pyautogui_code.append(
+                                f"pyautogui.dragTo({adj_x}, {adj_y}, duration={duration})"
+                            )
+                        else:
+                            pyautogui_code.append("pyautogui.dragTo(0, 0)")
+                elif tool_call.get("name", "") != "":
+                    action_type = tool_call['name']
+                    action_inputs = tool_call.get("arguments", "")
+                    pyautogui_code.append({
+                        'action_type': action_type,
+                        'parameters': action_inputs
+                    })
+
+            except (json.JSONDecodeError, KeyError) as e:
+                logger.error(f"Failed to parse tool call: {e}")
+                # import time 
+                # time.sleep(1000)
+
+        lines = response.split("\n")
+        inside_tool_call = False
+        current_tool_call: List[str] = []
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            if line.lower().startswith(("action:")):
+                if not low_level_instruction:
+                    low_level_instruction = line.split("Action:")[-1].strip()
+                continue
+
+            if line.startswith("<tool_call>"):
+                inside_tool_call = True
+                continue
+            elif line.startswith("</tool_call>"):
+                if current_tool_call:
+                    process_tool_call("\n".join(current_tool_call))
+                    current_tool_call = []
+                inside_tool_call = False
+                continue
+
+            if inside_tool_call:
+                current_tool_call.append(line)
+                continue
+
+            if line.startswith("{") and line.endswith("}"):
+                try:
+                    json_obj = json.loads(line)
+                    if "name" in json_obj and "arguments" in json_obj:
+                        process_tool_call(line)
+                except json.JSONDecodeError:
+                    pass
+
+        if current_tool_call:
+            process_tool_call("\n".join(current_tool_call))
+
+        if not low_level_instruction and len(pyautogui_code) > 0:
+            # action_type = pyautogui_code[0].split(".", 1)[1].split("(", 1)[0]
+            # low_level_instruction = f"Performing {action_type} action"
+            first_code = pyautogui_code[0]
+            # 处理特殊字符串
+            if isinstance(first_code, str) and "." in first_code:
+                action_type = first_code.split(".", 1)[1].split("(", 1)[0]
+                low_level_instruction = f"Performing {action_type} action"
+            elif isinstance(first_code, str):
+                # "WAIT", "DONE" 等特殊指令
+                low_level_instruction = f"Performing {first_code} action"
+            else:
+                # dict 类型的 tool_call
+                low_level_instruction = f"Performing {first_code.get('action_type', 'unknown')} action"
+            
+            
+
+        return low_level_instruction, pyautogui_code
+
+    @staticmethod
+    def _to_dashscope_messages(messages):
+        """
+        Convert messages built for OpenAI compat into DashScope MultiModalConversation format.
+        - "text" part  -> {"text": "..."}
+        - "image_url"  -> {"image": "<url-or-data-uri>"}
+        - "video_url"  -> {"video": "<url-or-data-uri>"}
+        """
+        ds_msgs = []
+        for m in messages:
+            role = m.get("role", "")
+            parts = m.get("content", [])
+            ds_content = []
+            for p in parts:
+                ptype = p.get("type")
+                if ptype == "text":
+                    ds_content.append({"text": p.get("text", "")})
+                elif ptype == "image_url":
+                    url = (p.get("image_url") or {}).get("url", "")
+                    # DashScope accepts http(s), file://, or data:image/*; keep as-is
+                    ds_content.append({"image": url})
+                elif ptype == "video_url":
+                    url = (p.get("video_url") or {}).get("url", "")
+                    ds_content.append({"video": url})
+                else:
+                    # If you ever pass raw assistant strings (no parts), tolerate it
+                    if isinstance(p, str):
+                        ds_content.append({"text": p})
+            # Also tolerate plain-string content (rare)
+            if not ds_content and isinstance(m.get("content"), str):
+                ds_content = [{"text": m["content"]}]
+            ds_msgs.append({"role": role, "content": ds_content})
+        return ds_msgs
+
+    @staticmethod
+    def _extract_text_from_dashscope_response(resp):
+        """Join all 'text' parts from the first choice, including reasoning if present."""
+        if hasattr(resp, "output"):
+            out = resp.output
+        else:
+            out = resp.get("output") if isinstance(resp, dict) else None
+        if not out:
+            return None
+        choices = getattr(out, "choices", None) if not isinstance(out, dict) else out.get("choices")
+        if not choices:
+            return None
+        msg = getattr(choices[0], "message", None) if not isinstance(choices[0], dict) else choices[0].get("message")
+        if not msg:
+            return None
+        content = getattr(msg, "content", None) if not isinstance(msg, dict) else msg.get("content", [])
+        if not content:
+            return None
+        
+        # Extract reasoning content if present (for thinking models)
+        reasoning_content = getattr(msg, "reasoning_content", None) if not isinstance(msg, dict) else msg.get("reasoning_content", None)
+        
+        content_text = "".join(part.get("text", "") for part in content if isinstance(part, dict) and "text" in part)
+        
+        # Format with thinking tags if reasoning exists
+        if reasoning_content is not None:
+            return f"<think>\n{reasoning_content}\n</think>\n\n{content_text}"
+        else:
+            return content_text
+
+    @backoff.on_exception(
+    backoff.constant,
+    (
+        SSLError,
+        openai.RateLimitError,
+        openai.BadRequestError,
+        openai.InternalServerError,
+        InvalidArgument,
+        ResourceExhausted,
+        InternalServerError,
+        BadRequest,
+    ),
+    interval=30,
+    max_tries=MAX_RETRY_TIMES_INNER,
+)
+    def call_llm(self, payload, model):
+        messages = payload["messages"]
+        if not self.save_logprobs:
+            if self.api_backend == "openai":
+                return self._call_llm_openai(messages, model)
+            elif self.api_backend == "dashscope":
+                return self._call_llm_dashscope(messages, model)
+            else:
+                raise ValueError(f"Unknown API backend: {self.api_backend}")
+        else:
+            return self._call_llm_openai_logprobs(messages, model)
+
+
+    def _call_llm_openai(self, messages, model):
+        """Call LLM using OpenAI SDK，不内部重试，失败直接抛出让上层处理"""
+        base_url = self.api_url
+        api_key = self.api_key
+        client = openai.OpenAI(
+            base_url=base_url,
+            api_key=api_key,
+            timeout=120.0,
+        )
+
+        logger.info(f"[OpenAI] Generating content with model: {model}, api_url: {base_url}, api_key: {api_key}")
+
+        if model == 'qwen3-vl-plus':
+            enable_thinking = True
+        else:
+            enable_thinking = False
+
+        if enable_thinking:
+            completion = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=self.max_tokens,
+                stream=True,
+                extra_body={
+                    'enable_thinking': enable_thinking,
+                    "thinking_budget": self.thinking_budget,
+                },
+            )
+
+            reasoning_content = ""
+            answer_content = ""
+            is_answering = False
+
+            for chunk in completion:
+                if not chunk.choices:
+                    print("\nUsage:", chunk.usage)
+                else:
+                    delta = chunk.choices[0].delta
+                    if hasattr(delta, 'reasoning_content') and delta.reasoning_content is not None:
+                        reasoning_content += delta.reasoning_content
+                    else:
+                        content_piece = delta.content or ""
+                        if content_piece and not is_answering:
+                            is_answering = True
+                        answer_content += content_piece
+
+            return answer_content
+
+        else:
+            # logger.info(f"Messages: {messages}")
+            completion = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                # max_tokens=self.max_tokens,
+                max_completion_tokens=self.max_completion_tokens,
+                temperature=self.temperature,
+                top_p=self.top_p,
+            )
+            logger.info(f"completion Output: {completion}")
+            return completion.choices[0].message.content or ""
+
+
+    def _call_llm_openai_logprobs(self, messages, model):
+        """Call LLM using OpenAI SDK with logprobs，不内部重试，失败直接抛出让上层处理"""
+        base_url = self.api_url
+        api_key = self.api_key
+        client = openai.OpenAI(
+            base_url=base_url,
+            api_key=api_key,
+            timeout=120.0,
+        )
+
+        logger.info(f"[OpenAI][logprobs] Generating content with model: {model}")
+
+        completion = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            # max_tokens=self.max_tokens,
+            max_completion_tokens=self.max_completion_tokens,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            logprobs=True,
+            top_logprobs=20,
+        )
+
+        raw_resp = completion.choices[0].message.content or ""
+
+        all_logprobs = []
+        for logprob_content in completion.choices[0].logprobs.content:
+            top_lopprobs = [
+                {
+                    "token": item.token,
+                    "bytes": item.bytes,
+                    "logprob": item.logprob,
+                    "prob": math.exp(item.logprob),
+                }
+                for item in logprob_content.top_logprobs
+            ]
+            top_logprob_vals = [lp.logprob for lp in logprob_content.top_logprobs]
+            sum_probs = round(sum(math.exp(lp) for lp in top_logprob_vals), 6)
+
+            all_logprobs.append(
+                {
+                    "top_sum_prob": sum_probs,
+                    "top_logprobs": top_lopprobs,
+                }
+            )
+
+        return raw_resp, all_logprobs
+
+
+    def _call_llm_dashscope(self, messages, model):
+        """Call LLM using DashScope SDK，不内部重试，失败直接抛出让上层处理"""
+        dashscope.base_http_api_url = os.environ.get(
+            "DASHSCOPE_BASE_URL",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1/",
+        )
+        dashscope.base_websocket_api_url = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference'
+        dashscope.api_key = os.environ.get("DASHSCOPE_API_KEY")
+        if not dashscope.api_key:
+            raise ValueError("DASHSCOPE_API_KEY must be set for DashScope backend")
+
+        ds_messages = self._to_dashscope_messages(messages)
+
+        thinking_status = f" (thinking={self.enable_thinking})" if self.enable_thinking else ""
+        logger.info(
+            f"[DashScope] Generating content with model: {model}"
+            f"{thinking_status}"
+        )
+
+        call_params = {
+            "model": model,
+            "messages": ds_messages,
+            "max_tokens": self.max_tokens,
+            "vl_high_resolution_images": True,
+        }
+
+        if self.enable_thinking:
+            call_params["enable_thinking"] = True
+            call_params["thinking_budget"] = self.thinking_budget
+
+        resp = MultiModalConversation.call(**call_params)
+
+        if getattr(resp, "status_code", None) not in (None, HTTPStatus.OK):
+            code = getattr(resp, "code", "")
+            msg = getattr(resp, "message", "")
+            reqid = getattr(resp, "request_id", "")
+            raise RuntimeError(
+                f"DashScope non-OK status (id={reqid}): {resp.status_code} {code} {msg}"
+            )
+
+        text = self._extract_text_from_dashscope_response(resp)
+        if not text:
+            raise ValueError("DashScope response has no text content")
+
+        return text
+
+    def reset(self, _logger=None):
+        global logger
+        logger = (
+            _logger if _logger is not None
+            else logging.getLogger("desktopenv.qwen3vl_agent")
+        )
+
+        self.thoughts = []
+        self.action_descriptions = (
+            [] if hasattr(self, "action_descriptions") else []
+        )
+        self.actions = []
+        self.observations = []
+        self.responses = []
+        self.screenshots = []
+        self.screen_info = []

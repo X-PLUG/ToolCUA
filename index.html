@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ToolCUA: Towards Optimal GUI-Tool Path Orchestration for Computer Use Agents.">
+  <meta name="keywords" content="ToolCUA, Computer Use Agent, CUA, GUI Agent, Tool Use, OSWorld-MCP, GUI-Tool Path Orchestration">
+  <title>ToolCUA: Towards Optimal GUI-Tool Path Orchestration</title>
+  <link rel="icon" href="./assets/toolcua-logo.svg" type="image/svg+xml">
+
+  <link rel="stylesheet" href="./assets/bulma.min.css">
+  <style>
+    body {
+      font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      color: #222;
+    }
+
+    .publication-title {
+      font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      line-height: 1.15;
+    }
+
+    .publication-authors {
+      line-height: 1.45;
+    }
+
+    .publication-links {
+      margin-top: 1.25rem;
+    }
+
+    .link-block {
+      display: inline-block;
+      margin: 0.18rem 0.12rem;
+    }
+
+    .hero.teaser .hero-body {
+      padding-top: 1.5rem;
+      padding-bottom: 1.5rem;
+    }
+
+    .teaser img,
+    .paper-figure img {
+      width: 100%;
+      border-radius: 8px;
+    }
+
+    .paper-figure {
+      margin: 1.25rem 0 1.5rem;
+    }
+
+    .figure-caption {
+      color: #666;
+      font-size: 0.95rem;
+      margin-top: 0.7rem;
+      text-align: center;
+    }
+
+    .section {
+      padding: 2.4rem 1.5rem;
+    }
+
+    .section.compact {
+      padding-top: 1.5rem;
+      padding-bottom: 1.5rem;
+    }
+
+    .metric-box {
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      padding: 1.2rem 0.8rem;
+      height: 100%;
+      background: #fff;
+    }
+
+    .metric-value {
+      color: #6b46c1;
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+
+    .metric-label {
+      color: #666;
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-top: 0.35rem;
+    }
+
+    .comparison-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 0.92rem;
+      color: #253044;
+      background: white;
+      border: 1px solid #e7e7e7;
+      border-radius: 8px;
+      overflow: hidden;
+      margin: 1.1rem 0 1.3rem;
+    }
+
+    .comparison-table th {
+      background: #ededed;
+      color: #111;
+      font-weight: 800;
+      padding: 0.7rem 0.75rem;
+      text-align: center;
+      border-bottom: 1px solid #d9d9d9;
+    }
+
+    .comparison-table td {
+      padding: 0.62rem 0.75rem;
+      text-align: center;
+      border-bottom: 1px solid #eeeeee;
+    }
+
+    .comparison-table td:first-child,
+    .comparison-table th:first-child {
+      text-align: left;
+    }
+
+    .comparison-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .comparison-table .our-model td {
+      background: #f0ebff;
+      font-weight: 800;
+    }
+
+    .placeholder-box {
+      border: 1px dashed #b8b8c8;
+      border-radius: 8px;
+      padding: 2rem;
+      color: #666;
+      background: #fafafa;
+    }
+
+    .case-showcase {
+      margin-top: 1.5rem;
+    }
+
+    .case-wide-container {
+      max-width: 1400px;
+    }
+
+    .case-container {
+      display: grid;
+      grid-template-columns: minmax(320px, 4fr) minmax(0, 6fr);
+      gap: 1rem;
+      align-items: stretch;
+      text-align: left;
+    }
+
+    .case-sidebar,
+    .case-panel {
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .case-sidebar {
+      overflow: hidden;
+    }
+
+    .case-instruction {
+      margin: 0 auto 1rem;
+      padding: 1rem 1.2rem;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      background: #fafafa;
+      color: #333;
+      font-size: 1rem;
+      text-align: left;
+    }
+
+    .case-instruction strong {
+      margin-right: 0.45rem;
+      color: #111;
+    }
+
+    .case-step-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      padding: 0.8rem 1rem;
+      border-bottom: 1px solid #eeeeee;
+    }
+
+    .case-step {
+      border: 1px solid #dddddd;
+      border-radius: 999px;
+      background: #fff;
+      padding: 0.38rem 0.7rem;
+      text-align: center;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+
+    .case-step:hover,
+    .case-step.is-active {
+      background: #f0ebff;
+    }
+
+    .case-step-number {
+      color: #6b46c1;
+      font-size: 0.82rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .case-step-title {
+      display: none;
+      color: #222;
+      font-size: 0.92rem;
+      font-weight: 650;
+      line-height: 1.35;
+    }
+
+    .case-main {
+      display: grid;
+      gap: 1rem;
+      min-width: 0;
+    }
+
+    .case-panel {
+      padding: 1rem;
+      min-width: 0;
+    }
+
+    .case-sidebar .case-panel {
+      border: 0;
+      border-radius: 0;
+      border-top: 1px solid #eeeeee;
+    }
+
+    .case-panel h4 {
+      color: #111;
+      font-size: 1rem;
+      font-weight: 800;
+      margin-bottom: 0.65rem;
+    }
+
+    .case-panel pre {
+      margin: 0;
+      max-height: 170px;
+      font-size: 0.8rem;
+      line-height: 1.45;
+    }
+
+    .case-current-step {
+      padding: 0.95rem 1rem 0;
+      color: #222;
+      font-size: 0.98rem;
+      font-weight: 750;
+      line-height: 1.35;
+    }
+
+    .case-state-panel {
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+
+    .case-state-frame {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      max-height: 760px;
+      border: 1px solid #eeeeee;
+      border-radius: 8px;
+      background: #111;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .case-state-image {
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    pre {
+      background: #f5f5f5;
+      border-radius: 8px;
+      color: #222;
+      overflow-x: auto;
+      padding: 1.2rem;
+      white-space: pre;
+    }
+
+    code {
+      color: inherit;
+      background: transparent;
+    }
+
+    .footer {
+      padding: 2rem 1.5rem;
+    }
+
+    @media screen and (max-width: 768px) {
+      .publication-title {
+        font-size: 2rem !important;
+      }
+
+      .comparison-table {
+        font-size: 0.78rem;
+      }
+
+      .comparison-table th,
+      .comparison-table td {
+        padding: 0.48rem 0.35rem;
+      }
+
+      .case-container {
+        grid-template-columns: 1fr;
+      }
+
+      .case-state-frame {
+        height: auto;
+        max-height: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar" role="navigation" aria-label="main navigation">
+    <div class="navbar-brand">
+      <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false">
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </a>
+    </div>
+    <div class="navbar-menu">
+      <div class="navbar-start" style="flex-grow: 1; justify-content: center;">
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link">More Research</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="https://github.com/X-PLUG/MobileAgent">Mobile-Agent Series</a>
+            <a class="navbar-item" href="https://osworld-mcp.github.io/">OSWorld-MCP</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-body">
+      <div class="container is-max-desktop">
+        <div class="columns is-centered">
+          <div class="column has-text-centered">
+            <h1 class="title is-1 publication-title">ToolCUA: Towards Optimal GUI-Tool Path Orchestration for Computer Use Agents</h1>
+
+            <div class="is-size-5 publication-authors">
+              <span class="author-block">Xuhao Hu<sup>2,1,*</sup>,</span>
+              <span class="author-block">Xi Zhang<sup>1,*</sup>,</span>
+              <span class="author-block">Haiyang Xu<sup>1,&dagger;</sup>,</span>
+              <span class="author-block">Kyle Qiao<sup>1</sup>,</span>
+              <span class="author-block">Jingyi Yang<sup>2</sup>,</span><br>
+              <span class="author-block">Xuanjing Huang<sup>2</sup>,</span>
+              <span class="author-block">Jing Shao<sup>3</sup>,</span>
+              <span class="author-block">Ming Yan<sup>1,&dagger;</sup>,</span>
+              <span class="author-block">Jieping Ye<sup>1</sup></span>
+            </div>
+
+            <div class="is-size-5 publication-authors">
+              <span class="author-block"><sup>1</sup>Tongyi Lab, Alibaba Group</span> &nbsp;
+              <span class="author-block"><sup>2</sup>Fudan University</span> &nbsp;
+              <span class="author-block"><sup>3</sup>Shanghai Artificial Intelligence Laboratory</span>
+            </div>
+
+            <div class="is-size-6 publication-authors">
+              <span class="author-block"><sup>*</sup>Equal contribution</span>
+              <span class="author-block"><sup>&dagger;</sup>Corresponding author</span>
+            </div>
+
+            <div class="publication-links">
+              <span class="link-block">
+                <a href="https://arxiv.org/abs/2508.09123" class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18">
+                      <path fill="currentColor" d="M6 2h8l5 5v15H6V2zm7 1.8V8h4.2L13 3.8zM8 11h8v1.6H8V11zm0 3.4h8V16H8v-1.6zm0 3.4h5v1.6H8v-1.6z"/>
+                    </svg>
+                  </span>
+                  <span>Paper</span>
+                </a>
+              </span>
+              <span class="link-block">
+                <a href="https://github.com/X-PLUG/ToolCUA" class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18">
+                      <path fill="currentColor" d="M12 2C6.48 2 2 6.58 2 12.22c0 4.52 2.87 8.35 6.84 9.71.5.09.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.49-1.11-1.49-.91-.63.07-.62.07-.62 1 .07 1.53 1.05 1.53 1.05.9 1.56 2.35 1.11 2.92.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05A9.3 9.3 0 0 1 12 5.95c.85 0 1.7.12 2.5.34 1.91-1.32 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.17 10.17 0 0 0 22 12.22C22 6.58 17.52 2 12 2z"/>
+                    </svg>
+                  </span>
+                  <span>Code</span>
+                </a>
+              </span>
+              <span class="link-block">
+                <a href="https://huggingface.co/mPLUG/ToolCUA-8B" class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                    <img src="./assets/huggingface.svg" alt="Hugging Face" width="20" height="20">
+                  </span>
+                  <span>Model</span>
+                </a>
+              </span>
+              <span class="link-block">
+                <a href="#results" class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18">
+                      <path fill="currentColor" d="M5 19h14v2H5v-2zm1-8h3v6H6v-6zm5-5h3v11h-3V6zm5 8h3v3h-3v-3z"/>
+                    </svg>
+                  </span>
+                  <span>Results</span>
+                </a>
+              </span>
+              <span class="link-block">
+                <a href="#case-study" class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18">
+                      <path fill="currentColor" d="M4 4h16v3H4V4zm0 5h16v3H4V9zm0 5h10v3H4v-3zm12 0h4v3h-4v-3z"/>
+                    </svg>
+                  </span>
+                  <span>Cases</span>
+                </a>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="hero teaser">
+    <div class="container is-max-desktop">
+      <div class="hero-body">
+        <img src="./assets/main_teaser.png" alt="ToolCUA overview and main results teaser">
+      </div>
+    </div>
+  </section>
+
+  <section class="section compact" id="abstract">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">Abstract</h2>
+          <div class="content has-text-justified">
+            <p>
+              Computer Use Agents (CUAs) are moving from text-only interaction toward real desktop operation, where agents must coordinate atomic GUI actions and high-level tool calls. However, simply exposing an agent to both action spaces does not make it reliable. In hybrid GUI-Tool environments, agents must learn when to continue through visual GUI grounding, when to invoke structured tools, and when tool calls may actually hurt task success.
+            </p>
+            <p>
+              We introduce <b>ToolCUA</b>, an end-to-end CUA designed for <b>optimal GUI-Tool path selection</b>. ToolCUA scales interleaved GUI-Tool trajectories from existing GUI-only data, applies Tool-Bootstrapped GUI RFT to acquire tool knowledge and calibrate local switching behavior, and further optimizes full task trajectories with Online Agentic RL using a Tool-Efficient Path Reward.
+            </p>
+            <p>
+              On OSWorld-MCP, ToolCUA-8B achieves <b>46.85%</b> accuracy, a relative improvement of about <b>66%</b> over Qwen3-VL-8B-Instruct, while reaching the lowest average completion steps among compared models at <b>14.93</b>.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="problem">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">Path Selection Confusion Under Hybrid Actions</h2>
+          <div class="content has-text-justified">
+            <p>
+              Giving CUAs both GUI actions and tool calls does not automatically make them better. Our diagnostic study exposes a direct <b>path selection confusion</b> problem under hybrid actions: some models stay GUI-centric and almost never call tools, while stronger models may overuse tools, shorten trajectories, and still lose task success.
+            </p>
+          </div>
+          <div class="paper-figure">
+            <img src="./assets/gui_tool_confusion.png" alt="GUI-Tool path confusion">
+            <div class="figure-caption">Current CUAs suffer from path selection confusion when GUI actions and tools are available together.</div>
+          </div>
+          <div class="content has-text-justified">
+            <p>
+              Qwen3-VL-8B barely invokes tools after they are introduced, with only 0.003 tool calls per trajectory and an accuracy drop from 29.0% to 28.2%. Qwen3-VL-235B calls tools much more frequently, reducing average steps from 25.9 to 17.4, but accuracy still drops from 41.1% to 38.1%. The core bottleneck is therefore whether the agent can choose the right GUI-Tool path at each state.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="method">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">ToolCUA Method</h2>
+          <div class="paper-figure">
+            <img src="./assets/method_overview.png" alt="ToolCUA method overview">
+            <div class="figure-caption">ToolCUA scales interleaved GUI-Tool trajectories, calibrates switching decisions, and optimizes trajectory-level paths with online RL.</div>
+          </div>
+          <div class="content has-text-justified">
+            <p>
+              <b>Interleaved GUI-Tool Trajectory Scaling.</b> ToolCUA starts from existing GUI-only trajectories and uses MLLMs to synthesize trajectory-aware grounded tools. It then generates tool trajectories with next-state grounding and constructs diverse interleaved GUI-Tool trajectories by replacing suitable GUI subsequences with tool calls.
+            </p>
+            <p>
+              <b>Tool-Bootstrapped GUI RFT.</b> Warmup SFT teaches tool schemas, arguments, responses, and GUI state transitions. Single-turn RL on critical switching steps further calibrates local GUI-versus-Tool decisions, so the model learns when a tool is appropriate in context.
+            </p>
+            <p>
+              <b>Online Agentic RL.</b> ToolCUA then performs long-horizon rollout in GUI-Tool environments. Its Tool-Efficient Path Reward combines task success, format validity, tool appropriateness, and path efficiency, encouraging agents to use tools when helpful, avoid them when unnecessary, and complete successful tasks in fewer steps.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="data">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">Scaling GUI-Tool Data from GUI-Only Trajectories</h2>
+          <div class="content has-text-justified">
+            <p>
+              High-quality GUI-Tool trajectories are scarce because real tools are application-specific, costly to build, and hard to maintain. ToolCUA repurposes GUI-only demonstrations into hybrid supervision, enabling the model to learn not only how to call tools, but also where tools should replace, complement, or defer to GUI operations.
+            </p>
+          </div>
+          <div class="paper-figure">
+            <img src="./assets/synthesis_example.png" alt="Synthetic interleaved GUI-Tool trajectory example">
+            <div class="figure-caption">Example of converting GUI-only operation traces into interleaved GUI-Tool supervision.</div>
+          </div>
+          <div class="columns is-multiline">
+            <div class="column is-one-third"><div class="metric-box"><div class="metric-value">10k</div><div class="metric-label">source trajectories</div></div></div>
+            <div class="column is-one-third"><div class="metric-box"><div class="metric-value">192k</div><div class="metric-label">raw GUI steps</div></div></div>
+            <div class="column is-one-third"><div class="metric-box"><div class="metric-value">180k</div><div class="metric-label">SFT steps</div></div></div>
+            <div class="column is-one-third"><div class="metric-box"><div class="metric-value">5k</div><div class="metric-label">critical switching steps</div></div></div>
+            <div class="column is-one-third"><div class="metric-box"><div class="metric-value">4,350</div><div class="metric-label">unique tools</div></div></div>
+            <div class="column is-one-third"><div class="metric-box"><div class="metric-value">19.75</div><div class="metric-label">avg. tools per trajectory</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="results">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">Main Results on OSWorld-MCP</h2>
+          <div class="content has-text-justified">
+            <p>
+              ToolCUA is evaluated on OSWorld-MCP, which extends OSWorld with GUI actions and 150+ MCP tools across realistic desktop applications. We report Accuracy, Tool Invocation Rate (TIR), and Average Completion Steps (ACS) over 333 feasible tasks.
+            </p>
+          </div>
+          <div class="table-container">
+            <table class="comparison-table">
+              <thead>
+                <tr>
+                  <th>Agent Model</th>
+                  <th>Accuracy &uarr;</th>
+                  <th>TIR &uarr;</th>
+                  <th>ACS &darr;</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>Claude-4-Sonnet</td><td>43.54</td><td>35.74</td><td>19.76</td></tr>
+                <tr><td>Gemini-3.1-Pro</td><td>41.14</td><td>34.23</td><td>25.40</td></tr>
+                <tr><td>Claude-4.5-Sonnet</td><td>48.35</td><td>40.24</td><td>19.07</td></tr>
+                <tr><td>GUI-Owl-1.5-8B</td><td>43.84</td><td>36.04</td><td>21.19</td></tr>
+                <tr><td>GUI-Owl-1.5-32B</td><td>48.05</td><td>41.14</td><td>24.19</td></tr>
+                <tr><td>Qwen3-VL-8B-Instruct</td><td>28.23</td><td>8.41</td><td>19.34</td></tr>
+                <tr class="our-model"><td>ToolCUA-8B</td><td>46.85</td><td>24.32</td><td>14.93</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="paper-figure">
+            <img src="./assets/main_results.png" alt="ToolCUA main OSWorld-MCP results">
+            <div class="figure-caption">ToolCUA-8B achieves strong accuracy while producing the shortest average successful execution paths.</div>
+          </div>
+          <div class="content has-text-justified">
+            <p>
+              Compared with Qwen3-VL-8B-Instruct, ToolCUA improves overall accuracy by +18.62 points, raises TIR from 8.41 to 24.32, and reduces ACS from 19.34 to 14.93. This shows that ToolCUA learns selective tool usage rather than simply increasing tool calls.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="analysis">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">Path Selection, Generalization, and Ablations</h2>
+          <div class="content has-text-justified">
+            <p>
+              ToolCUA demonstrates strong generalization beyond the training distribution. Although online agentic RL is conducted only on single-application Linux tasks and excludes the <i>multi_apps</i> category, ToolCUA improves on the held-out <i>multi_apps</i> domain from the baseline 9.8% and the pre-online-RL stage 18.5% to 23.9%. It also achieves consistent gains across specialized domains, including <i>libreoffice_calculation</i> and <i>vs_code</i>.
+            </p>
+            <p>
+              Beyond cross-task transfer, ToolCUA further generalizes to unseen Windows desktop environments. Despite being trained on Linux-based trajectories and sandboxes, ToolCUA reaches 33.8% accuracy on WindowsAgentArena, outperforming the Qwen3-VL-8B-Instruct baseline by 7.4 percentage points and surpassing larger Qwen3-VL variants.
+            </p>
+          </div>
+          <div class="paper-figure">
+            <img src="./assets/app_results.png" alt="ToolCUA app and OOD results">
+            <div class="figure-caption">ToolCUA generalizes across multi-app workflows, application domains, and unseen Windows desktop tasks.</div>
+          </div>
+          <div class="content has-text-justified">
+            <p>
+              <b>The Importance of Interleaved GUI-Tool Trajectory Data.</b> Removing coldstart RFT with synthetic interleaved GUI-Tool data and directly applying online agentic RL still improves task accuracy, but the model struggles to acquire reliable tool-calling behavior. Its TIR remains consistently low and tool calls stay close to zero throughout most of training, showing that online RL with tool-efficiency rewards alone is insufficient to overcome the GUI-centric bias of base models.
+            </p>
+            <p>
+              <b>Advantages of Tool-Efficient Path Reward.</b> Replacing our path reward with vanilla multi-turn GRPO makes the accuracy curve less stable, produces a clear drop around steps 8--11, and leaves an eventual gap of about 7 percentage points after 20 training steps. TIR and tool calls fluctuate without a consistent upward trend, while trajectory length lacks a stable downward trend, validating that the Tool-Efficient Path Reward is essential for tool-appropriate and efficiency-aware path selection.
+            </p>
+          </div>
+          <div class="paper-figure">
+            <img src="./assets/rl_dynamics.png" alt="ToolCUA RL dynamics and ablations">
+            <div class="figure-caption">Online Agentic RL dynamics show that both hybrid data and path-aware rewards are necessary for stable GUI-Tool orchestration.</div>
+          </div>
+          <div class="content has-text-justified">
+            <p>
+              <b>Hybrid GUI-Tool Training is More Effective than Pure GUI.</b> A pure GUI pipeline improves the baseline from 29.03% to 34.93% after SFT and 42.05% after agentic RL, but both stages remain below their GUI-Tool counterparts. RFT training with synthetic interleaved GUI-Tool trajectories already reaches 38.13%, and full ToolCUA further improves to 46.85%, indicating that hybrid action spaces provide a more effective training environment for learning when structured tool calls can replace redundant low-level GUI operations.
+            </p>
+          </div>
+          <div class="paper-figure">
+            <img src="./assets/more_results.png" alt="ToolCUA pure GUI comparison and WindowsAgentArena generalization">
+            <div class="figure-caption">Hybrid GUI-Tool training outperforms pure GUI training, and ToolCUA transfers to Windows desktop environments.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="case-study">
+    <div class="container case-wide-container">
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-full">
+          <h2 class="title is-3">Case Study</h2>
+          <p>
+            Click a case and a trajectory step to inspect the agent action, tool response, and post-execution desktop state.
+          </p>
+
+          <div class="case-showcase">
+            <div class="tabs is-centered is-toggle">
+              <ul>
+                <li class="case-tab is-active" data-case-id="calc"><a>LibreOffice Calc</a></li>
+                <li class="case-tab" data-case-id="vscode"><a>VS Code</a></li>
+              </ul>
+            </div>
+
+            <div class="case-instruction">
+              <strong>Task Instruction</strong>
+              <span id="case-instruction"></span>
+            </div>
+
+            <div class="case-container">
+              <div class="case-sidebar">
+                <div id="case-step-list" class="case-step-list"></div>
+                <div id="case-current-step" class="case-current-step"></div>
+                <div class="case-panel">
+                  <h4>Agent Action</h4>
+                  <pre><code id="case-action"></code></pre>
+                </div>
+                <div class="case-panel">
+                  <h4>Tool Response</h4>
+                  <pre><code id="case-response"></code></pre>
+                </div>
+              </div>
+
+              <div class="case-main">
+                <div class="case-panel case-state-panel">
+                  <h4>Post-Execution State</h4>
+                  <div class="case-state-frame">
+                    <img id="case-state" class="case-state-image" src="./assets/cases/ex2_step_2.png" alt="Case post-execution state">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="BibTeX">
+    <div class="container is-max-desktop content">
+      <h2 class="title">BibTeX</h2>
+      <pre><code>@article{hu2026toolcua,
+  title={ToolCUA: Towards Optimal GUI-Tool Path Orchestration for Computer Use Agents},
+  author={Hu, Xuhao and Zhang, Xi and Xu, Haiyang and Qiao, Kyle and Yang, Jingyi and Huang, Xuanjing and Shao, Jing and Yan, Ming and Ye, Jieping},
+  journal={arXiv preprint arXiv:2508.09123},
+  year={2026}
+}</code></pre>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="columns is-centered">
+        <div class="column is-8">
+          <div class="content">
+            <p>
+              This website is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by-sa/4.0/">Creative
+                Commons Attribution-ShareAlike 4.0 International
+                License</a>.
+            </p>
+            <p>
+              This means you are free to borrow the <a href="https://github.com/nerfies/nerfies.github.io">source
+                code</a> of this website,
+              we just ask that you link back to this page in the footer.
+              Please remember to remove the analytics code included in the
+              header of the website which
+              you do not want on your website.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </footer>
+  <script>
+    const caseData = {
+      calc: {
+        instruction: 'Create two pivot tables in a new sheet named Sheet2 showing the total revenue for each product and sales channel.',
+        steps: [
+          {
+            step: 'Step 2',
+            title: 'Get workbook information to identify the file path and sheet details.',
+            action: `Action: Get the workbook information to identify the file path and sheet details.\n\n<tool_call>\n{"name": "osworld_mcp_libreoffice_calc.get_workbook_info", "arguments": {}}\n</tool_call>`,
+            response: `<tool_response>\n{"type": "text", "text": "{\\"success\\": true, \\"result\\": {\\"file_path\\": \\"file:///home/user/SummerSales.xlsx\\", \\"file_title\\": \\"SummerSales.xlsx\\", \\"sheets\\": [{\\"name\\": \\"Sheet1\\", \\"index\\": 0, \\"visible\\": true, \\"row_count\\": 30, \\"column_count\\": 7}], \\"active_sheet\\": \\"Sheet1\\", \\"sheet_count\\": 1}, \\"error_message\\": null}"}\n</tool_response>`,
+            image: './assets/cases/ex2_step_2.png'
+          },
+          {
+            step: 'Step 3',
+            title: 'Get content information of Sheet1 to understand headers and data ranges.',
+            action: `Action: Get content information of Sheet1 to understand the data structure including headers and data ranges.\n\n<tool_call>\n{"name": "osworld_mcp_libreoffice_calc.env_info", "arguments": {"sheet_name": "Sheet1"}}\n</tool_call>`,
+            response: `<tool_response>\n{"type": "text", "text": "{\\"success\\": true, \\"result\\": {\\"name\\": \\"Sheet1\\", \\"data\\": \\"  | A| B| C | D | E | F | G |\\\\n--|-----...}, \\"error_message\\": null}"}\n</tool_response>`,
+            image: './assets/cases/ex2_step_3.png'
+          },
+          {
+            step: 'Step 4',
+            title: 'Create a new sheet named Sheet2 for the pivot tables.',
+            action: `Action: Create a new sheet named "Sheet2" to serve as the destination for the pivot tables.\n\n<tool_call>\n{"name": "osworld_mcp_libreoffice_calc.switch_active_sheet", "arguments": {"sheet_name": "Sheet2"}}\n</tool_call>`,
+            response: `<tool_response>\n{"type": "text", "text": "{\\"success\\": true, \\"result\\": \\"Success\\", \\"error_message\\": null}"}\n</tool_response>`,
+            image: './assets/cases/ex2_step_4.png'
+          },
+          {
+            step: 'Step 5',
+            title: 'Create PivotTable1 for total revenue by product.',
+            action: `Action: Create the first pivot table named 'PivotTable1' in Sheet2 to show total revenue for each product.\n\n<tool_call>\n{"name": "osworld_mcp_libreoffice_calc.create_pivot_table", "arguments": {"source_sheet": "Sheet1", "table_name": "PivotTable1", "row_fields": ["F"], "value_fields": ["G"], "aggregation_function": "sum", "target_cell": "A1"}}\n</tool_call>`,
+            response: `<tool_response>\n{"success": true, "result": "Success", "error_message": null}\n</tool_response>`,
+            image: './assets/cases/ex2_step_5.png'
+          },
+          {
+            step: 'Step 6',
+            title: 'Create PivotTable2 for total revenue by sales channel.',
+            action: `Action: Create the second pivot table named 'PivotTable2' in Sheet2 to show total revenue for each sales channel.\n\n<tool_call>\n{"name": "osworld_mcp_libreoffice_calc.create_pivot_table", "arguments": {"source_sheet": "Sheet1", "table_name": "PivotTable2", "row_fields": ["E"], "value_fields": ["G"], "aggregation_function": "sum", "target_cell": "A19"}}\n</tool_call>`,
+            response: `<tool_response>\n{"success": true, "result": "Success", "error_message": null}\n</tool_response>`,
+            image: './assets/cases/ex2_step_6.png'
+          }
+        ]
+      },
+      vscode: {
+        instruction: 'Add folder "/home/user/data1" and folder "/home/user/data2" to the current VS Code workspace.',
+        steps: [
+          {
+            step: 'Step 1',
+            title: 'Add /home/user/data1 to the current workspace.',
+            action: `Action: Add the folder '/home/user/data1' to the current workspace in VSCode.\n\n<tool_call>\n{"name": "osworld_mcp_code.add_folder", "arguments": {"folder": "/home/user/data1"}}\n</tool_call>`,
+            response: `<tool_response>\n{"type": "text", "text": "{\\"success\\": true, \\"result\\": \\"Successfully added folder\\", \\"error_message\\": null}"}\n</tool_response>`,
+            image: './assets/cases/ex4_step_1.png'
+          },
+          {
+            step: 'Step 2',
+            title: 'Add /home/user/data2 to the current workspace.',
+            action: `Action: Add the folder '/home/user/data2' to the current workspace in VSCode.\n\n<tool_call>\n{"name": "osworld_mcp_code.add_folder", "arguments": {"folder": "/home/user/data2"}}\n</tool_call>`,
+            response: `<tool_response>\n{"type": "text", "text": "{\\"success\\": true, \\"result\\": \\"Successfully added folder\\", \\"error_message\\": null}"}\n</tool_response>`,
+            image: './assets/cases/ex4_step_2.png'
+          },
+          {
+            step: 'Step 3',
+            title: 'Click the trust dialog to finalize workspace access.',
+            action: `Action: Click on the "Yes, I trust the authors" button in the trust dialog popup.\n\n<tool_call>\n{"name": "computer_use", "arguments": {"action": "click", "coordinate": [596, 627]}}\n</tool_call>`,
+            response: '## Not available',
+            image: './assets/cases/ex4_step_3.png'
+          },
+          {
+            step: 'Step 4',
+            title: 'Terminate the task as successful.',
+            action: `Action: Terminate the task as successful since the goal has been accomplished.\n\n<tool_call>\n{"name": "computer_use", "arguments": {"action": "terminate", "status": "success"}}\n</tool_call>`,
+            response: '## Not available',
+            image: './assets/cases/ex4_step_4.png'
+          }
+        ]
+      }
+    };
+
+    let activeCase = 'calc';
+    let activeStep = 0;
+
+    function renderCase() {
+      const currentCase = caseData[activeCase];
+      const stepList = document.getElementById('case-step-list');
+      document.getElementById('case-instruction').textContent = currentCase.instruction;
+      stepList.innerHTML = '';
+
+      currentCase.steps.forEach((item, index) => {
+        const button = document.createElement('button');
+        button.className = `case-step${index === activeStep ? ' is-active' : ''}`;
+        button.type = 'button';
+        button.innerHTML = `<span class="case-step-number">${item.step}</span><span class="case-step-title">${item.title}</span>`;
+        button.addEventListener('click', () => {
+          activeStep = index;
+          renderCase();
+        });
+        stepList.appendChild(button);
+      });
+
+      const currentStep = currentCase.steps[activeStep];
+      document.getElementById('case-current-step').textContent = `${currentStep.step}: ${currentStep.title}`;
+      document.getElementById('case-action').textContent = `${currentStep.step}: ${currentStep.action}`;
+      document.getElementById('case-response').textContent = currentStep.response;
+      const stateImage = document.getElementById('case-state');
+      stateImage.src = currentStep.image;
+      stateImage.alt = `${activeCase} ${currentStep.step} post-execution state`;
+    }
+
+    document.querySelectorAll('.case-tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.case-tab').forEach((item) => item.classList.remove('is-active'));
+        tab.classList.add('is-active');
+        activeCase = tab.dataset.caseId;
+        activeStep = 0;
+        renderCase();
+      });
+    });
+
+    renderCase();
+  </script>
+</body>
+</html>
