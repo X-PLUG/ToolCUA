@@ -31,9 +31,14 @@
     - [🚀 vLLM Serve](#-vllm-serve)
     - [🖥️ Evaluation](#️-evaluation)
   - [📊 Performance](#-performance)
-  - [TODO](#todo)
   - [Acknowledge](#acknowledge)
   - [Citation](#citation)
+
+## TODO
+- [x] **Tool CUA Model Released**
+- [ ] **Data Pipeline**: GUI-Tool interleaved trajectory scaling pipeline
+- [ ] **Training Infra**: Asynchronous training-rollout decoupled agentic RL in sandbox
+
 
 <a id="introduction"></a>
 # 🌟 Introduction
@@ -170,16 +175,6 @@ Compared with the Qwen3-VL-8B-Instruct baseline, **ToolCUA-8B** improves Accurac
   <img src="assets/app_results.png" width="900" alt="ToolCUA results across applications">
 </div>
 </div>
-
-
-
-
-## TODO
-- [ ] **Model Released**
-  - [ ] ToolCUA-8B 
-  - [ ] ToolCUA-32B
-- [ ] **Data Pipeline**
-- [ ] **Training Infra**
   
 
 <!-- ## Star History
