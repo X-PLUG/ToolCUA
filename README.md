@@ -11,7 +11,7 @@
 </h1>
 
 <p align="center">
-&nbsp&nbsp🌐 <a href="https://x-plug.github.io/ToolCUA/">Website</a>&nbsp&nbsp | &nbsp&nbsp📑 <a href="https://arxiv.org/abs/2508.09123">Paper</a>&nbsp&nbsp | &nbsp&nbsp🤗 <a href="https://huggingface.co/mPLUG/ToolCUA-8B">ToolCUA-8B</a>&nbsp&nbsp | &nbsp&nbsp📄 <a href="https://x-plug.github.io/ToolCUA/#case-study">Cases</a>
+&nbsp&nbsp🌐 <a href="https://x-plug.github.io/ToolCUA/">Website</a>&nbsp&nbsp | &nbsp&nbsp📑 <a href="https://arxiv.org/abs/2605.12481">Paper</a>&nbsp&nbsp | &nbsp&nbsp🤗 <a href="https://huggingface.co/mPLUG/ToolCUA-8B">ToolCUA-8B</a>&nbsp&nbsp | &nbsp&nbsp📄 <a href="https://x-plug.github.io/ToolCUA/#case-study">Cases</a>
 </p>
 
 <div align="center">
@@ -198,7 +198,12 @@ Our work is motivated by [OpenCUA](https://github.com/xlang-ai/OpenCUA), [ScaleC
 If you use ToolCUA in your research or project, please cite our work:
 
 ```bibtex
-
+@article{hu2026toolcua,
+  title={ToolCUA: Towards Optimal GUI-Tool Path Orchestration for Computer Use Agents},
+  author={Hu, Xuhao and Zhang, Xi and Xu, Haiyang and Qiao, Kyle and Yang, Jingyi and Huang, Xuanjing and Shao, Jing and Yan, Ming and Ye, Jieping},
+  journal={arXiv preprint arXiv:2605.12481},
+  year={2026}
+}
 ```
 
 
